@@ -1,6 +1,6 @@
-=====
-Mamba
-=====
+===============
+Mamba Framework
+===============
 
 Mamba is a high-level Web Applications framework based on Twisted, Storm and Jinja2.
 
@@ -25,7 +25,7 @@ Minimum Dependencies
     <td>Twisted</td><td>>= 10.2.0</td><td><a href="http://www.twistedmatrix.com" target="_blank">http://www.twistedmatrix.com</a></td>
   </tr>
   <tr>
-    <td>Storm</td><td>>= 0.19</td><td><a href="http://storm.canonical.com" target="_blank">http://storm.canonical.com</a></td>
+    <td>Mamba's Storm</td><td></td><td><a href="https://github.com/PyMamba/mamba-storm" target="_blank">https://github.com/PyMamba/mamba-storm</a></td>
   </tr>
   <tr>
     <td>Jinja2</td><td>>= 2.4</td><td><a href="http://jinja.pocoo.org/docs/#" target="_blank">http://jinja.pocoo.org/docs/</a></td>
@@ -45,8 +45,10 @@ Mamba uses [buildbot](http://buildbot.net/ "BuildBot") as CI solution. At the mo
 
 Known platforms where Mamba runs
 --------------------------------
-There is no reason to believe that Mamba does not run under Microsoft Windows or Mac OS X operating systems but
-this was not tested and we have no `buildbot slaves` under those operating systems to check it out (any contribution is welcome).
+Altough mamba is hardly tested on GNU/Linux, we don't have full uptime `buildbot slaves` to
+test it on Windows or Mac OS X (we don't have `buildbot slave` at all). Mamba is maintained
+as most compatible as we can we every operating system but any contribution on this field
+is really welcome.
 
 <table>
   <tr>

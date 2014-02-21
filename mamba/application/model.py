@@ -11,12 +11,14 @@
 
 """
 
+import inspect
 from os.path import normpath
+from collections import OrderedDict
 
 from storm.uri import URI
-from storm.expr import Desc
+from storm.expr import Desc, Undef
 from storm.twisted.transact import Transactor
-from storm.properties import PropertyPublisherMeta
+from storm.properties import PropertyPublisherMeta, PropertyColumn
 
 from mamba import plugin
 from mamba.utils import config
@@ -93,11 +95,39 @@ class Model(ModelProvider):
 
     def __init__(self):
         super(Model, self).__init__()
+        self.__mamba_async__ = getattr(self, '__mamba_async__', True)
 
         if not self.database.started:
             self.database.start()
 
         self.transactor = Transactor(self.database.pool)
+
+    def __new__(cls, *args, **kwargs):
+        """This method is remembering the fields in the order that
+        they were declared in the model. This is used to maintain
+        declared order in the generated SQL schema. It uses some
+        inspection to determine what fields should put on the ordered
+        list. It, then, replaces cls._storm_columns with the ordered
+        one, in order to maintain full interface compatibility.
+        """
+        columns = inspect.getmembers(
+            cls, lambda o: isinstance(o, PropertyColumn)
+        )
+
+        creation_order = sorted(
+            columns, key=lambda i: i[1]._creation_order
+        )
+
+        ordered_columns = OrderedDict()
+
+        for _, ordered_property in creation_order:
+            for column, property_ in cls._storm_columns.iteritems():
+                if ordered_property is property_:
+                    ordered_columns[column] = property_
+                    break
+
+        cls._storm_columns = ordered_columns
+        return ModelProvider.__new__(cls, *args, **kwargs)
 
     @property
     def uri(self):
@@ -119,6 +149,31 @@ class Model(ModelProvider):
 
         return self
 
+    def _set_empty_properties_to_none(self):
+        """If a property is does not allow none and there is
+        no default value for it, Storm itself will raise a NoneError
+        when we set it to None.
+        """
+        for column, property_ in self._storm_columns.items():
+            variable = property_.variable_factory()
+            has_default = not variable._value is Undef
+            value = getattr(
+                self, column._detect_attr_name(self.__class__), None
+            )
+            if not variable._allow_none and not has_default and value is None:
+                variable.set(None)
+
+    def __storm_pre_flush__(self):
+        """
+        Storm calls this method before commiting a store.
+
+        This is used right now to go through all the columns and setting
+        them as None where the column is NOT NULL and there is no default
+        value. If we don't do this, storm proceeds by inserting a 0, 0.0
+        or '' (empty string), what is clearly wrong.
+        """
+        self._set_empty_properties_to_none()
+
     @transact
     def create(self):
         """Create a new register in the database
@@ -128,8 +183,9 @@ class Model(ModelProvider):
         store.add(self)
         store.commit()
 
+    @classmethod
     @transact
-    def read(self, id, copy=False):
+    def read(klass, id, copy=False):
         """
         Read a register from the database. The give key (usually ID) should
         be a primary key.
@@ -138,13 +194,14 @@ class Model(ModelProvider):
         :type id: int
         """
 
-        store = self.database.store()
-        data = store.get(self.__class__, id)
+        obj = klass()
+        store = obj.database.store()
+        data = store.get(klass, id)
 
         if data is not None:
             if copy is True:
-                data = self.copy(data)
-            data.transactor = self.transactor
+                data = obj.copy(data)
+            data.transactor = obj.transactor
 
         return data
 
@@ -196,6 +253,8 @@ class Model(ModelProvider):
             model.find(Customer.name == u"John")
             model.find(name=u"John")
             model.find((Customer, City), Customer.city_id == City.id)
+
+        .. versionadded:: 0.3.6
         """
 
         obj = klass
@@ -214,6 +273,8 @@ class Model(ModelProvider):
         :type order_by: model property
         :param desc: if True, order the resultset by descending order
         :type desc: bool
+
+        .. versionadded:: 0.3.6
         """
 
         def inner_transaction():

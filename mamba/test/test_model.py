@@ -16,9 +16,9 @@ from collections import OrderedDict
 from storm.uri import URI
 from twisted.trial import unittest
 from twisted.python import filepath
-from storm.exceptions import DatabaseModuleError
+from storm.exceptions import DatabaseModuleError, NoneError
 from storm.twisted.testing import FakeThreadPool
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, Deferred
 from storm.locals import (
     Int, Unicode, Reference, Enum, List, Bool, DateTime, Decimal
 )
@@ -156,9 +156,24 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(dummy.name, u'Dummy')
         self.truncate_dummy()
 
+    @inlineCallbacks
+    def test_model_read_as_class_method(self):
+        self.insert_dummy()
+        dummy = yield DummyModel.read(1)
+        self.assertEqual(dummy.id, 1)
+        self.assertEqual(dummy.name, u'Dummy')
+        self.truncate_dummy()
+
     def test_model_synchronous_read(self):
         self.insert_dummy()
         dummy = DummyModel().read(1, async=False)
+        self.assertEqual(dummy.id, 1)
+        self.assertEqual(dummy.name, u'Dummy')
+        self.truncate_dummy()
+
+    def test_model_synchronous_read_as_class_method(self):
+        self.insert_dummy()
+        dummy = DummyModel.read(1, async=False)
         self.assertEqual(dummy.id, 1)
         self.assertEqual(dummy.name, u'Dummy')
         self.truncate_dummy()
@@ -174,10 +189,31 @@ class ModelTest(unittest.TestCase):
         self.assertNotEqual(dummy, dummy2)
         self.truncate_dummy()
 
+    @inlineCallbacks
+    def test_model_read_copy_as_class_method(self):
+        self.insert_dummy()
+        dummy = yield DummyModel.read(1)
+        dummy2 = yield DummyModel.read(1, True)
+
+        self.assertEqual(dummy.name, u'Dummy')
+        self.assertEqual(dummy2.name, u'Dummy')
+        self.assertNotEqual(dummy, dummy2)
+        self.truncate_dummy()
+
     def test_model_read_synchronous_copy(self):
         self.insert_dummy()
         dummy = DummyModel().read(1, async=False)
         dummy2 = DummyModel().read(1, True, async=False)
+
+        self.assertEqual(dummy.name, u'Dummy')
+        self.assertEqual(dummy2.name, u'Dummy')
+        self.assertNotEqual(dummy, dummy2)
+        self.truncate_dummy()
+
+    def test_model_read_synchronous_copy_as_class_method(self):
+        self.insert_dummy()
+        dummy = DummyModel.read(1, async=False)
+        dummy2 = DummyModel.read(1, True, async=False)
 
         self.assertEqual(dummy.name, u'Dummy')
         self.assertEqual(dummy2.name, u'Dummy')
@@ -222,6 +258,19 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(dummy2.name, u'Dummy')
         self.truncate_dummy()
 
+    @inlineCallbacks
+    def test_model_update_with_read_as_class_method_copy_behaviour(self):
+        self.insert_dummy()
+        dummy = yield DummyModel.read(1, True)
+        dummy.name = u'Dummy'
+        dummy.update()
+        del(dummy)
+
+        dummy2 = yield DummyModel.read(1, True)
+        self.assertEqual(dummy2.id, 1)
+        self.assertEqual(dummy2.name, u'Dummy')
+        self.truncate_dummy()
+
     def test_model_update_with_read_copy_synchornous_behaviour(self):
         self.insert_dummy()
         dummy = DummyModel().read(1, True, async=False)
@@ -230,6 +279,19 @@ class ModelTest(unittest.TestCase):
         del(dummy)
 
         dummy2 = DummyModel().read(1, True, async=False)
+        self.assertEqual(dummy2.id, 1)
+        self.assertEqual(dummy2.name, u'Dummy')
+        self.truncate_dummy()
+
+    def test_model_update_with_read_as_class_method_copy_synchornous_behaviour(
+            self):
+        self.insert_dummy()
+        dummy = DummyModel.read(1, True, async=False)
+        dummy.name = u'Dummy'
+        dummy.update()
+        del(dummy)
+
+        dummy2 = DummyModel.read(1, True, async=False)
         self.assertEqual(dummy2.id, 1)
         self.assertEqual(dummy2.name, u'Dummy')
         self.truncate_dummy()
@@ -381,6 +443,18 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(dummy[0].name, u'OrderTest')
         self.truncate_dummy()
 
+    def test_model_global_behaviour_sync(self):
+        self.insert_dummy()
+        DummyModel.__mamba_async__ = False
+        dummy = DummyModel().read(1)
+        self.assertTrue(isinstance(dummy, DummyModel))
+
+    def test_model_global_behaviour_async(self):
+        self.insert_dummy()
+        DummyModel.__mamba_async__ = True
+        dummy = DummyModel().read(1)
+        self.assertTrue(isinstance(dummy, Deferred))
+
     @inlineCallbacks
     def test_model_all_order_by_no_instance(self):
         self.insert_dummy()
@@ -431,6 +505,16 @@ class ModelTest(unittest.TestCase):
         self.assertTrue('PRIMARY KEY(id)' in script)
         self.assertTrue('name varchar' in script)
         self.assertTrue('id integer' in script)
+
+    def test_model_dump_ordered_fields(self):
+        dummy = DummyModelDecimal()
+        script = dummy.dump_table()
+        split_script = script.split('\n')
+
+        self.assertTrue('id integer' in split_script[1])
+        self.assertTrue('money text' in split_script[2])
+        self.assertTrue('money2 text' in split_script[3])
+        self.assertTrue('money3 text' in split_script[4])
 
     @common_config(engine='mysql:')
     def test_model_dump_table_with_mysql(self):
@@ -770,6 +854,10 @@ class ModelTest(unittest.TestCase):
         dummy = DummyModel()
         adapter = dummy.get_adapter()
         self.assertTrue(interfaces.IMambaSQL.providedBy(adapter))
+
+    def test_model_allow_none_false_raises_exception(self):
+        dummy = DummyModel()
+        self.assertRaises(NoneError, dummy.create, async=False)
 
     def test_sqlite_raises_missing_primary_key_exception(self):
 
